@@ -94,7 +94,7 @@ def summarise(flight : rc.Flight, time : datetime):
     )
     return ds
     
-def main(lat=LAT, lon=LON, month=None, iter=ITER):
+def main(lat: float = LAT, lon: float = LON, month: int | None = None, iter: int = ITER):
     path = os.path.dirname(__file__) + f"/era5_{lat}_{lon}.nc"
 
     if not os.path.exists(path) or os.stat(path).st_size == 0:
@@ -125,10 +125,10 @@ def main(lat=LAT, lon=LON, month=None, iter=ITER):
         else:
             ds = xr.concat([ds, trial], dim="time")
 
-    print(ds)
     da = ds["landing_distance"].mean(dim="time")
-    landing_dist_ci = ds["landing_distance"].quantile([0.5, 0.9], dim="time")
-    print(landing_dist_ci.sel(quantile=0.9))
+    q = ds["landing_distance"].quantile([0.5, 0.9, 0.95], dim="time")
+    quant_str = ", ".join([f"{x * 100}th_percentile={y}" for x,y in zip(q["quantile"].values, q.values)])
+    print(f"landing_distance: mean={da.values}, {quant_str}")
 
 #nasty argument parser
 if __name__ == "__main__":
