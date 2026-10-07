@@ -1,1 +1,4 @@
 *.nc
+__pycache__
+.env
+.venv
