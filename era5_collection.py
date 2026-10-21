@@ -79,14 +79,21 @@ def gen_rand_time(month):
 
 def summarise(flight : rc.Flight, time : datetime):
     t_end = float(flight.t_final)
+    
+    p_events = [(t, flight.altitude(t), abs(flight.vz(t))) for t, _ in flight.parachute_events]
     ds = xr.Dataset(
         {
-            "apogee" : ("time", [flight.apogee]),
+            "apogee" : ("time", [flight.apogee_time]),
+            "apogee_disp" : ("time", [flight.drift(flight.apogee_time)]),
             "landing_distance" : ("time", [flight.drift(t_end)]),
-            "impact_speed" : ("time", [abs(
-                math.hypot(flight.vz(t_end), flight.vx(t_end), flight.vy(t_end))
-            )]),
-            "flight_time" : ("time", [t_end]),
+            "impact_speed" : ("time", [abs(flight.vz(t_end))]),
+            # "flight_time" : ("time", [t_end]),
+            "drogue_time" : ("time", [p_events[0][0]]),
+            "drogue_alt" : ("time", [p_events[0][1]]),
+            "drogue_acc" : ("time", [p_events[0][2]]),
+            "main_time" : ("time", [p_events[1][0]]),
+            "main_alt" : ("time", [p_events[1][1]]),
+            "main_acc" : ("time", [p_events[1][2]]),
         },
         coords={
             "time" : [time]
@@ -105,14 +112,9 @@ def main(lat: float = LAT, lon: float = LON, month: int | None = None, iter: int
 
     env = rc.Environment(latitude=lat, longitude=lon)
 
-    #TODO: create an array and select 50, 95 and 99% results!
-    # Altitude and velocity of the deployment of a drogue, main (is a secondary parachute required?)
-    # Parachute dimensions
-    # Contribution of launch corridor from descent (from Coriolis drift) - 0m/s sim
     for i in range(iter):
         time=gen_rand_time(month)
 
-        #TODO: is ERA5 time UTC or local (I suspect UTC, but should check). Currently I assume UTC
         env.set_date(time)
         env.set_atmospheric_model(type="reanalysis", file=path, dictionary=ROCKETPY_TO_ERA5)
 
@@ -124,11 +126,31 @@ def main(lat: float = LAT, lon: float = LON, month: int | None = None, iter: int
             ds = trial
         else:
             ds = xr.concat([ds, trial], dim="time")
+    
+    apog_mean = ds["apogee"].mean(dim="time")
+    lvel_mean = ds["impact_speed"].mean(dim="time")
+    lvel_quant = ds["impact_speed"].quantile([0.5, 0.9, 0.95], dim="time")
+    lvel_qstr = ", ".join([f"{x * 100}th_percentile={y}" for x,y in zip(lvel_quant["quantile"].values, lvel_quant.values)])
+    ld_mean = ds["landing_distance"].mean(dim="time")
+    ld_quant = ds["landing_distance"].quantile([0.5, 0.9, 0.95], dim="time")
+    ld_qstr = ", ".join([f"{x * 100}th_percentile={y}" for x,y in zip(ld_quant["quantile"].values, ld_quant.values)])
 
-    da = ds["landing_distance"].mean(dim="time")
-    q = ds["landing_distance"].quantile([0.5, 0.9, 0.95], dim="time")
-    quant_str = ", ".join([f"{x * 100}th_percentile={y}" for x,y in zip(q["quantile"].values, q.values)])
-    print(f"landing_distance: mean={da.values}, {quant_str}")
+# TODO: Print TF
+# Altitude and velocity of the deployment of a drogue, main DONE!
+# Parachute dimensions DONE!
+# Landing velocity DONE!
+# Contribution of launch corridor from descent (total) DONE!
+# Contribution of launch corridor from descent (from Coriolis drift)
+    print(f"\n---------\n RESULTS \n---------")
+    print(f"main_drag_coeff={MAIN_CD_S}, drogue_drag_coeff={DROGUE_CD_S}")
+    print(f"landing_velocity_z(m/s): mean={lvel_mean.values}, {lvel_qstr}")
+    print(f"landing_distance(m): mean={ld_mean.values}, {ld_qstr}")
+    print(f"apogee(s)={apog_mean.values}")
+    print(f"parachute_events:")
+    print(f"  drogue:")
+    print(f"    time={ds["drogue_time"].mean(dim="time").values}, alt={ds["drogue_alt"].mean(dim="time").values}, vel_z={ds["drogue_acc"].mean(dim="time").values}")
+    print(f"  main")
+    print(f"    time={ds["main_time"].mean(dim="time").values}, alt={ds["main_alt"].mean(dim="time").values}, vel_z={ds["drogue_acc"].mean(dim="time").values}")
 
 #nasty argument parser
 if __name__ == "__main__":
